@@ -1,0 +1,16 @@
+[package]
+name = "lucide-svg-inline"
+version = "0.1.0"
+edition = "2021"
+description = "Build-time codegen that generates a typed Icon enum from Lucide SVG files"
+license = "MIT"
+repository = "https://github.com/human-solutions/lucide-svg-inline"
+keywords = ["lucide", "svg", "icons", "codegen"]
+categories = ["development-tools::build-utils"]
+
+[dependencies]
+toml = "0.8"
+heck = "0.5"
+
+[dev-dependencies]
+tempfile = "3"
