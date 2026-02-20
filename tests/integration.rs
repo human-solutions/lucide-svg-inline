@@ -143,6 +143,37 @@ fn test_generated_name_method() {
 }
 
 // ---------------------------------------------------------------------------
+// Content-aware writes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_second_run_preserves_mtimes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = make_config(tmp.path());
+
+    // First run: creates all files
+    lucide_svg_inline::generate_to(&config, tmp.path()).unwrap();
+
+    let icon_rs_path = tmp.path().join("icon.rs");
+    let heart_svg_path = tmp.path().join("svgs/heart.svg");
+
+    let mtime_icon_rs = std::fs::metadata(&icon_rs_path).unwrap().modified().unwrap();
+    let mtime_heart = std::fs::metadata(&heart_svg_path).unwrap().modified().unwrap();
+
+    // Small sleep to ensure filesystem mtime granularity
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    // Second run: same inputs, should not rewrite files
+    lucide_svg_inline::generate_to(&config, tmp.path()).unwrap();
+
+    let mtime_icon_rs_2 = std::fs::metadata(&icon_rs_path).unwrap().modified().unwrap();
+    let mtime_heart_2 = std::fs::metadata(&heart_svg_path).unwrap().modified().unwrap();
+
+    assert_eq!(mtime_icon_rs, mtime_icon_rs_2, "icon.rs mtime should be preserved");
+    assert_eq!(mtime_heart, mtime_heart_2, "heart.svg mtime should be preserved");
+}
+
+// ---------------------------------------------------------------------------
 // Error cases
 // ---------------------------------------------------------------------------
 

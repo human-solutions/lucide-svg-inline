@@ -126,15 +126,23 @@ impl std::error::Error for Error {}
 /// Generate the `Icon` enum source file in `OUT_DIR`.
 ///
 /// Call this from `build.rs`. Emits `cargo:rerun-if-changed` directives
-/// for both the manifest and the SVG directory.
+/// for the manifest and each individual SVG file referenced in it.
 pub fn generate(config: Config) -> Result<(), Error> {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
 
-    // Emit rerun-if-changed directives
+    // Emit rerun-if-changed for the manifest itself
     println!("cargo:rerun-if-changed={}", config.manifest.display());
-    println!("cargo:rerun-if-changed={}", config.svg_dir.display());
 
-    generate_to(&config, &out_dir)
+    // Parse manifest early so we can emit per-file directives
+    let icon_names = parse_manifest(&config.manifest)?;
+    for name in &icon_names {
+        println!(
+            "cargo:rerun-if-changed={}",
+            config.svg_dir.join(format!("{name}.svg")).display()
+        );
+    }
+
+    generate_to_inner(&config, &icon_names, &out_dir)
 }
 
 /// Generate the `Icon` enum source file to a specific directory.
@@ -146,6 +154,17 @@ pub fn generate_to(config: &Config, out_dir: &Path) -> Result<(), Error> {
     }
 
     let icon_names = parse_manifest(&config.manifest)?;
+    generate_to_inner(config, &icon_names, out_dir)
+}
+
+fn generate_to_inner(
+    config: &Config,
+    icon_names: &[String],
+    out_dir: &Path,
+) -> Result<(), Error> {
+    if !config.svg_dir.is_dir() {
+        return Err(Error::SvgDirNotFound(config.svg_dir.clone()));
+    }
 
     // Create output SVG directory
     let svg_out_dir = out_dir.join("svgs");
@@ -154,7 +173,7 @@ pub fn generate_to(config: &Config, out_dir: &Path) -> Result<(), Error> {
 
     // Process each icon: read SVG, apply defaults, write to OUT_DIR
     let mut icons: Vec<IconEntry> = Vec::with_capacity(icon_names.len());
-    for name in &icon_names {
+    for name in icon_names {
         let src_path = config.svg_dir.join(format!("{name}.svg"));
         if !src_path.is_file() {
             return Err(Error::IconNotFound {
@@ -169,8 +188,7 @@ pub fn generate_to(config: &Config, out_dir: &Path) -> Result<(), Error> {
         let transformed = apply_defaults(&svg_content, &config.svg_defaults, name)?;
 
         let out_path = svg_out_dir.join(format!("{name}.svg"));
-        fs::write(&out_path, &transformed)
-            .map_err(|e| Error::WriteError(out_path, e))?;
+        write_if_changed(&out_path, &transformed)?;
 
         let variant = kebab_to_variant(name);
         icons.push(IconEntry {
@@ -182,8 +200,7 @@ pub fn generate_to(config: &Config, out_dir: &Path) -> Result<(), Error> {
     // Generate and write Rust source
     let rust_code = generate_rust_code(&icons);
     let icon_rs_path = out_dir.join("icon.rs");
-    fs::write(&icon_rs_path, rust_code)
-        .map_err(|e| Error::WriteError(icon_rs_path, e))?;
+    write_if_changed(&icon_rs_path, &rust_code)?;
 
     Ok(())
 }
@@ -195,6 +212,23 @@ pub fn generate_to(config: &Config, out_dir: &Path) -> Result<(), Error> {
 struct IconEntry {
     name: String,
     variant: String,
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Write a file only if its content has changed, preserving mtime otherwise.
+/// This prevents downstream recompilation when `include_str!` files are unchanged.
+fn write_if_changed(path: &Path, content: &str) -> Result<(), Error> {
+    if path.is_file() {
+        if let Ok(existing) = fs::read_to_string(path) {
+            if existing == content {
+                return Ok(());
+            }
+        }
+    }
+    fs::write(path, content).map_err(|e| Error::WriteError(path.to_path_buf(), e))
 }
 
 // ---------------------------------------------------------------------------

@@ -365,14 +365,20 @@ Lucide SVG filenames are kebab-case (e.g., `arrow-right.svg`). Convert to Pascal
 
 ### cargo:rerun-if-changed
 
-The `generate()` function must emit:
+The `generate()` function emits per-file directives for the manifest and each individual SVG referenced in it:
 
 ```
 cargo:rerun-if-changed=lucide-icons.toml
-cargo:rerun-if-changed=vendor/lucide-icons
+cargo:rerun-if-changed=vendor/lucide-icons/arrow-right.svg
+cargo:rerun-if-changed=vendor/lucide-icons/heart.svg
+...
 ```
 
-So the build step re-runs when the manifest changes or icons are updated, but not on every build.
+This is more precise than watching the whole directory — Cargo only tracks the SVGs you actually use, not all 1500 vendored files.
+
+### Content-aware writes
+
+Output files (icon.rs and SVGs in OUT_DIR) are only written when their content has changed. This preserves file mtimes, preventing `rustc` from recompiling downstream crates when `include_str!` files are unchanged.
 
 ### include_str! paths
 
