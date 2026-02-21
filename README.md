@@ -2,6 +2,8 @@
 
 A build-time codegen crate that generates a typed Rust `Icon` enum from [Lucide](https://lucide.dev/) SVG files. Icons are inlined as `&'static str` via `include_str!`, enabling dead code elimination — only icons you actually reference end up in your binary.
 
+All ~1500 Lucide icons are bundled with the crate — no need to vendor SVGs yourself.
+
 ## Quick start
 
 Add to your `Cargo.toml`:
@@ -26,7 +28,7 @@ Add a `build.rs`:
 ```rust
 fn main() {
     lucide_svg_inline::generate(lucide_svg_inline::Config {
-        svg_dir: "vendor/lucide-icons".into(),
+        svg_dir: None, // use bundled Lucide icons
         manifest: "lucide-icons.toml".into(),
         svg_defaults: lucide_svg_inline::SvgDefaults {
             strip_dimensions: true,
@@ -72,6 +74,18 @@ let close_btn = Icon::X.render(&RenderOptions {
 });
 ```
 
+## Custom SVG directory
+
+To use your own SVG files instead of the bundled ones, set `svg_dir`:
+
+```rust
+lucide_svg_inline::Config {
+    svg_dir: Some("vendor/lucide-icons".into()),
+    manifest: "lucide-icons.toml".into(),
+    svg_defaults: Default::default(),
+}
+```
+
 ## `SvgDefaults` options
 
 All build-time transforms are baked into the `include_str!` output — zero runtime cost.
@@ -100,6 +114,13 @@ Runtime per-use overrides via the `render()` method:
 | `fill` | `Option<String>` | Override fill |
 | `class` | `Option<String>` | Override CSS class |
 | `extra_attrs` | `Vec<(String, String)>` | Additional attributes |
+
+## Bundled icon version
+
+```rust
+// In build.rs — check which Lucide version is bundled
+println!("Bundled Lucide version: {}", lucide_svg_inline::bundled_version());
+```
 
 ## License
 
