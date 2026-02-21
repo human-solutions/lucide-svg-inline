@@ -2,7 +2,7 @@
 
 A build-time codegen crate that generates a typed Rust `Icon` enum from [Lucide](https://lucide.dev/) SVG files. Icons are inlined as `&'static str` via `include_str!`, enabling dead code elimination — only icons you actually reference end up in your binary.
 
-All ~1500 Lucide icons are bundled with the crate — no need to vendor SVGs yourself.
+All ~1500 Lucide icons are vendored in the `icons/` directory and bundled with the crate — no need to download SVGs yourself. See [`ICONS.md`](ICONS.md) for the full list of available icon names, categories, and tags.
 
 ## Quick start
 
@@ -114,6 +114,20 @@ Runtime per-use overrides via the `render()` method:
 | `fill` | `Option<String>` | Override fill |
 | `class` | `Option<String>` | Override CSS class |
 | `extra_attrs` | `Vec<(String, String)>` | Additional attributes |
+
+## Finding icon names
+
+[`ICONS.md`](ICONS.md) lists every available icon with its categories and tags — useful for searching by keyword or browsing what's available. It's generated automatically by the update script.
+
+## Updating icons
+
+The vendored icons and `ICONS.md` are updated together via:
+
+```sh
+./scripts/update-icons.sh 0.475.0  # specify the Lucide release version
+```
+
+This downloads the release tarball, copies the SVGs into `icons/`, and regenerates `ICONS.md` from the upstream metadata.
 
 ## Bundled icon version
 

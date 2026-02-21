@@ -28,3 +28,36 @@ printf '%s' "$VERSION" > "$ICONS_DIR/VERSION"
 
 COUNT=$(find "$ICONS_DIR" -name '*.svg' | wc -l | tr -d ' ')
 echo "Done: ${COUNT} icons vendored to icons/ (Lucide v${VERSION})"
+
+# Generate ICONS.md from .json metadata (json files stay in tmpdir, not committed)
+echo "Generating ICONS.md..."
+METADATA_DIR="$TMPDIR/lucide-${VERSION}/icons"
+METADATA_DIR="$METADATA_DIR" VERSION="$VERSION" python3 -c "
+import json, os, pathlib
+
+metadata_dir = os.environ['METADATA_DIR']
+version = os.environ['VERSION']
+
+entries = []
+for f in sorted(pathlib.Path(metadata_dir).glob('*.json')):
+    with open(f) as fh:
+        meta = json.load(fh)
+    name = f.stem
+    categories = ', '.join(meta.get('categories', []))
+    tags = ', '.join(meta.get('tags', []))
+    entries.append(f'| {name} | {categories} | {tags} |')
+
+lines = [
+    f'# Lucide Icons v{version}',
+    '',
+    f'{len(entries)} icons available. Use these names in your \`lucide-icons.toml\` manifest.',
+    '',
+    '| Icon | Categories | Tags |',
+    '|------|------------|------|',
+    *entries,
+    '',
+]
+print('\n'.join(lines))
+" > "$REPO_ROOT/ICONS.md"
+
+echo "Generated ICONS.md with ${COUNT} icons"
