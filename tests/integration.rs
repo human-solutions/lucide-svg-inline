@@ -7,14 +7,14 @@ fn fixtures_dir() -> PathBuf {
 
 fn make_config(_out_dir: &std::path::Path) -> Config {
     Config {
-        svg_dir: fixtures_dir().join("svgs"),
+        svg_dir: Some(fixtures_dir().join("svgs")),
         manifest: fixtures_dir().join("lucide-icons.toml"),
         svg_defaults: SvgDefaults::default(),
     }
 }
 
 // ---------------------------------------------------------------------------
-// Full pipeline
+// Full pipeline (disk mode)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -57,7 +57,7 @@ fn test_generate_default_strip_dimensions() {
 fn test_generate_with_all_transforms() {
     let tmp = tempfile::tempdir().unwrap();
     let config = Config {
-        svg_dir: fixtures_dir().join("svgs"),
+        svg_dir: Some(fixtures_dir().join("svgs")),
         manifest: fixtures_dir().join("lucide-icons.toml"),
         svg_defaults: SvgDefaults {
             strip_dimensions: true,
@@ -86,7 +86,7 @@ fn test_generate_with_all_transforms() {
 fn test_generate_preserve_dimensions() {
     let tmp = tempfile::tempdir().unwrap();
     let config = Config {
-        svg_dir: fixtures_dir().join("svgs"),
+        svg_dir: Some(fixtures_dir().join("svgs")),
         manifest: fixtures_dir().join("lucide-icons.toml"),
         svg_defaults: SvgDefaults {
             strip_dimensions: false,
@@ -174,7 +174,88 @@ fn test_second_run_preserves_mtimes() {
 }
 
 // ---------------------------------------------------------------------------
-// Error cases
+// Bundled mode (svg_dir: None)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_bundled_mode_generates_icons() {
+    let tmp = tempfile::tempdir().unwrap();
+    let manifest = tmp.path().join("lucide-icons.toml");
+    std::fs::write(&manifest, r#"icons = ["heart", "arrow-right", "x"]"#).unwrap();
+
+    let config = Config {
+        svg_dir: None,
+        manifest,
+        svg_defaults: SvgDefaults::default(),
+    };
+
+    lucide_svg_inline::generate_to(&config, tmp.path()).unwrap();
+
+    let icon_rs = std::fs::read_to_string(tmp.path().join("icon.rs")).unwrap();
+    assert!(icon_rs.contains("pub enum Icon"));
+    assert!(icon_rs.contains("Heart"));
+    assert!(icon_rs.contains("ArrowRight"));
+    assert!(icon_rs.contains("X,"));
+
+    // SVG files should exist in svgs/
+    let heart_svg = std::fs::read_to_string(tmp.path().join("svgs/heart.svg")).unwrap();
+    assert!(heart_svg.contains("<svg"));
+    assert!(heart_svg.contains("viewBox="));
+}
+
+#[test]
+fn test_bundled_mode_with_transforms() {
+    let tmp = tempfile::tempdir().unwrap();
+    let manifest = tmp.path().join("lucide-icons.toml");
+    std::fs::write(&manifest, r#"icons = ["heart"]"#).unwrap();
+
+    let config = Config {
+        svg_dir: None,
+        manifest,
+        svg_defaults: SvgDefaults {
+            strip_dimensions: true,
+            default_class: Some("icon".into()),
+            stroke_width: Some(1.5),
+            ..Default::default()
+        },
+    };
+
+    lucide_svg_inline::generate_to(&config, tmp.path()).unwrap();
+
+    let svg = std::fs::read_to_string(tmp.path().join("svgs/heart.svg")).unwrap();
+    assert!(svg.contains(r#"class="icon""#));
+    assert!(svg.contains(r#"stroke-width="1.5""#));
+    assert!(!svg.contains(r#" width=""#));
+}
+
+#[test]
+fn test_bundled_mode_icon_not_found() {
+    let tmp = tempfile::tempdir().unwrap();
+    let manifest = tmp.path().join("lucide-icons.toml");
+    std::fs::write(&manifest, r#"icons = ["nonexistent-icon-xyz"]"#).unwrap();
+
+    let config = Config {
+        svg_dir: None,
+        manifest,
+        svg_defaults: SvgDefaults::default(),
+    };
+
+    let err = lucide_svg_inline::generate_to(&config, tmp.path()).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("nonexistent-icon-xyz"), "Error should mention the icon name: {msg}");
+    assert!(msg.contains("bundled"), "Error should mention bundled: {msg}");
+}
+
+#[test]
+fn test_bundled_version() {
+    let version = lucide_svg_inline::bundled_version();
+    // Should be a semver-like string
+    assert!(!version.is_empty());
+    assert!(version.contains('.'), "Expected semver format, got: {version}");
+}
+
+// ---------------------------------------------------------------------------
+// Error cases (disk mode)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -184,7 +265,7 @@ fn test_error_icon_not_found() {
     std::fs::write(&manifest, r#"icons = ["nonexistent"]"#).unwrap();
 
     let config = Config {
-        svg_dir: fixtures_dir().join("svgs"),
+        svg_dir: Some(fixtures_dir().join("svgs")),
         manifest,
         svg_defaults: SvgDefaults::default(),
     };
@@ -199,7 +280,7 @@ fn test_error_svg_dir_not_found() {
     let tmp = tempfile::tempdir().unwrap();
 
     let config = Config {
-        svg_dir: PathBuf::from("/nonexistent/path"),
+        svg_dir: Some(PathBuf::from("/nonexistent/path")),
         manifest: fixtures_dir().join("lucide-icons.toml"),
         svg_defaults: SvgDefaults::default(),
     };
@@ -216,7 +297,7 @@ fn test_error_malformed_manifest() {
     std::fs::write(&manifest, "{{{{bad toml").unwrap();
 
     let config = Config {
-        svg_dir: fixtures_dir().join("svgs"),
+        svg_dir: Some(fixtures_dir().join("svgs")),
         manifest,
         svg_defaults: SvgDefaults::default(),
     };
@@ -233,7 +314,7 @@ fn test_error_missing_icons_key() {
     std::fs::write(&manifest, "other_key = true").unwrap();
 
     let config = Config {
-        svg_dir: fixtures_dir().join("svgs"),
+        svg_dir: Some(fixtures_dir().join("svgs")),
         manifest,
         svg_defaults: SvgDefaults::default(),
     };

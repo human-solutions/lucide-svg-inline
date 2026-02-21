@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use heck::ToUpperCamelCase;
 
+include!(concat!(env!("OUT_DIR"), "/bundled.rs"));
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -18,7 +20,8 @@ use heck::ToUpperCamelCase;
 /// Configuration for the code generator.
 pub struct Config {
     /// Path to the directory containing Lucide SVG files.
-    pub svg_dir: PathBuf,
+    /// `None` uses the bundled Lucide icons shipped with this crate.
+    pub svg_dir: Option<PathBuf>,
 
     /// Path to the TOML manifest listing which icons to include.
     pub manifest: PathBuf,
@@ -88,6 +91,8 @@ pub enum Error {
     WriteError(PathBuf, std::io::Error),
     /// The SVG file has no opening `<svg` tag.
     InvalidSvg(String),
+    /// An icon name was not found in the bundled icons.
+    BundledIconNotFound(String),
 }
 
 impl fmt::Display for Error {
@@ -113,6 +118,9 @@ impl fmt::Display for Error {
             Error::SvgReadError(p, e) => write!(f, "failed to read SVG {}: {e}", p.display()),
             Error::WriteError(p, e) => write!(f, "failed to write {}: {e}", p.display()),
             Error::InvalidSvg(name) => write!(f, "SVG '{name}' has no opening <svg> tag"),
+            Error::BundledIconNotFound(name) => {
+                write!(f, "icon '{name}' not found in bundled icons")
+            }
         }
     }
 }
@@ -122,6 +130,11 @@ impl std::error::Error for Error {}
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/// Returns the version string of the bundled Lucide icons (e.g. `"0.475.0"`).
+pub fn bundled_version() -> &'static str {
+    BUNDLED_VERSION
+}
 
 /// Generate the `Icon` enum source file in `OUT_DIR`.
 ///
@@ -135,11 +148,13 @@ pub fn generate(config: Config) -> Result<(), Error> {
 
     // Parse manifest early so we can emit per-file directives
     let icon_names = parse_manifest(&config.manifest)?;
-    for name in &icon_names {
-        println!(
-            "cargo:rerun-if-changed={}",
-            config.svg_dir.join(format!("{name}.svg")).display()
-        );
+    if let Some(ref svg_dir) = config.svg_dir {
+        for name in &icon_names {
+            println!(
+                "cargo:rerun-if-changed={}",
+                svg_dir.join(format!("{name}.svg")).display()
+            );
+        }
     }
 
     generate_to_inner(&config, &icon_names, &out_dir)
@@ -149,8 +164,10 @@ pub fn generate(config: Config) -> Result<(), Error> {
 ///
 /// This is the testable core — [`generate()`] is a thin wrapper around this.
 pub fn generate_to(config: &Config, out_dir: &Path) -> Result<(), Error> {
-    if !config.svg_dir.is_dir() {
-        return Err(Error::SvgDirNotFound(config.svg_dir.clone()));
+    if let Some(ref svg_dir) = config.svg_dir {
+        if !svg_dir.is_dir() {
+            return Err(Error::SvgDirNotFound(svg_dir.clone()));
+        }
     }
 
     let icon_names = parse_manifest(&config.manifest)?;
@@ -162,8 +179,10 @@ fn generate_to_inner(
     icon_names: &[String],
     out_dir: &Path,
 ) -> Result<(), Error> {
-    if !config.svg_dir.is_dir() {
-        return Err(Error::SvgDirNotFound(config.svg_dir.clone()));
+    if let Some(ref svg_dir) = config.svg_dir {
+        if !svg_dir.is_dir() {
+            return Err(Error::SvgDirNotFound(svg_dir.clone()));
+        }
     }
 
     // Create output SVG directory
@@ -174,17 +193,7 @@ fn generate_to_inner(
     // Process each icon: read SVG, apply defaults, write to OUT_DIR
     let mut icons: Vec<IconEntry> = Vec::with_capacity(icon_names.len());
     for name in icon_names {
-        let src_path = config.svg_dir.join(format!("{name}.svg"));
-        if !src_path.is_file() {
-            return Err(Error::IconNotFound {
-                name: name.clone(),
-                expected_path: src_path,
-            });
-        }
-
-        let svg_content = fs::read_to_string(&src_path)
-            .map_err(|e| Error::SvgReadError(src_path.clone(), e))?;
-
+        let svg_content = read_svg(name, config.svg_dir.as_deref())?;
         let transformed = apply_defaults(&svg_content, &config.svg_defaults, name)?;
 
         let out_path = svg_out_dir.join(format!("{name}.svg"));
@@ -203,6 +212,26 @@ fn generate_to_inner(
     write_if_changed(&icon_rs_path, &rust_code)?;
 
     Ok(())
+}
+
+/// Read an SVG by name, either from disk or from bundled icons.
+fn read_svg(name: &str, svg_dir: Option<&Path>) -> Result<String, Error> {
+    match svg_dir {
+        Some(dir) => {
+            let src_path = dir.join(format!("{name}.svg"));
+            if !src_path.is_file() {
+                return Err(Error::IconNotFound {
+                    name: name.to_string(),
+                    expected_path: src_path,
+                });
+            }
+            fs::read_to_string(&src_path)
+                .map_err(|e| Error::SvgReadError(src_path.clone(), e))
+        }
+        None => bundled_svg(name)
+            .map(|s| s.to_string())
+            .ok_or_else(|| Error::BundledIconNotFound(name.to_string())),
+    }
 }
 
 // ---------------------------------------------------------------------------
